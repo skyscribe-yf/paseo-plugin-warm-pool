@@ -36,6 +36,11 @@ cp -r scripts ~/.paseo/warm-pool-scripts
 paseo reload
 ```
 
+`scripts/` is a vendored snapshot of
+[`skyscribe-yf/implementer-skill`](https://github.com/skyscribe-yf/implementer-skill), where those
+scripts are also the entry point for an agent skill that claims worktree lanes. That repository is
+the source of truth for them; this copy exists so the plugin installs from one clone.
+
 Resolution order:
 
 1. `WARM_POOL_SCRIPTS` environment variable

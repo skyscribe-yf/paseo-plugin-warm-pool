@@ -3,6 +3,11 @@
 The claim protocol the plugin shells out to. They are also usable on their own, from any agent or
 script, without the Paseo plugin.
 
+> **Upstream:** [`skyscribe-yf/implementer-skill`](https://github.com/skyscribe-yf/implementer-skill)
+> — `scripts/` there is the source of truth. This directory is a vendored snapshot so the plugin
+> installs from a single clone. If you change the scripts, change them upstream and re-copy, or the
+> two will drift.
+
 ## Why they exist
 
 A fresh git worktree costs a checkout plus a full dependency bootstrap. Reusing one keeps its
