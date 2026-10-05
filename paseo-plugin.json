@@ -1,0 +1,7 @@
+{
+  "id": "warm-pool",
+  "description": "Routes new worktree workspaces into persistent pooled slots so dependencies are reused instead of reinstalled per run",
+  "requirements": {
+    "paseo": ">=0.10.3"
+  }
+}
