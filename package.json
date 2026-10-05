@@ -17,7 +17,8 @@
     "index.server.tsx",
     "client/",
     "server/",
-    "shared/"
+    "shared/",
+    "scripts/"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit"

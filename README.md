@@ -27,14 +27,16 @@ unrelated repositories — so reuse works while isolation is preserved.
 
 ## Setup
 
-The claim protocol lives in two scripts this plugin does **not** ship:
+The claim protocol ships with this repository under [`scripts/`](scripts/) and works standalone —
+see [`scripts/README.md`](scripts/README.md) for the full contract. Point the plugin at that
+directory:
 
-| Script | Contract |
-| --- | --- |
-| `pool-take.sh <slot> <task>` | prints the slot path on stdout; exit `0` claimed, `2` busy, `3` dirty, `4` self-claim |
-| `pool-release.sh <slot>` | releases the slot's lock |
+```bash
+cp -r scripts ~/.paseo/warm-pool-scripts
+paseo reload
+```
 
-Put them in one directory and point the plugin at it. Resolution order:
+Resolution order:
 
 1. `WARM_POOL_SCRIPTS` environment variable
 2. `<repo>/.git/wt-pool-scripts/` inside the repository being served
@@ -42,19 +44,10 @@ Put them in one directory and point the plugin at it. Resolution order:
 
 The file fallbacks matter. Paseo forks plugin children without an explicit `env`, so they inherit
 the **daemon's** environment — and a desktop-managed daemon does not inherit your shell's. A value
-exported in your terminal is invisible to the plugin after a daemon restart. Prefer the file
-fallback:
+exported in your terminal is invisible to the plugin after a daemon restart.
 
-```bash
-mkdir -p ~/.paseo/warm-pool-scripts
-cp pool-take.sh pool-release.sh wt-pool.sh wt-anchor.sh ~/.paseo/warm-pool-scripts/
-```
-
-`wt-pool.sh` is the helper that creates the worktree; `wt-anchor.sh` resolves the pool anchor. Both
-must sit next to the claim scripts.
-
-Without all this, every workspace silently falls back to a normal managed worktree — stock Paseo
-behaviour, not an error.
+Without any of these, every workspace silently falls back to a normal managed worktree — stock
+Paseo behaviour, not an error.
 
 ## Behaviour
 
@@ -75,12 +68,24 @@ gets a different slot, never a subdirectory of its own.
 
 ## Display
 
-Slot workspaces keep the originating checkout's project, so the sidebar nests them instead of
-scattering one project per slot. This works because the hook carries the checkout's `projectId`
-through to the creation request. Without it Paseo falls back to `basename(cwd)` — which for a slot
-is `lane-a` — and registers a separate project per slot.
+Slot workspaces keep the originating checkout's project, so the sidebar nests them under it instead
+of scattering one project per slot:
 
-Each slot's title is `[lane-a]`; the checkout name already appears as the project above it.
+```
+my-checkout          ← the checkout
+ ├── pool/lane-a
+ ├── pool/lane-b
+ └── pool/lane-c
+```
+
+This works because the hook carries the checkout's `projectId` through to the creation request.
+Without it Paseo falls back to `basename(cwd)` — which for a slot is `lane-a` — and registers a
+separate project per slot.
+
+The plugin deliberately sets **no** title. Paseo lets an agent call `rename_workspace` to attach a
+generated description, and that replaces `title` wholesale, so a lane marker planted there would be
+wiped by the first turn. Leaving `title` null keeps the derived branch name until the agent renames
+it, and lets the generated description land cleanly afterwards.
 
 ## Configuration
 
@@ -103,10 +108,11 @@ never share — `pyvenv.cfg` and `bin/activate` hardcode an absolute `VIRTUAL_EN
 
 ## Locking
 
-Claiming delegates to `pool-take.sh` rather than reimplementing the protocol, so the plugin and
-whatever else uses those scripts share one implementation. That script:
+Claiming delegates to `scripts/pool-take.sh` rather than reimplementing the protocol, so the plugin
+and any other caller share one implementation. That script:
 
-- treats a claim as busy until `POOL_STALE_SEC` (default 6h) has elapsed, then steals it;
+- treats a claim as busy until `POOL_STALE_SEC` (default 6h) has elapsed, then steals it — age, not
+  PID liveness, because the shell that took the claim exits within seconds;
 - refuses a slot with uncommitted work, and keeps the lock so a later run cannot silently discard it;
 - refuses to hand a run the slot it is already standing in (exit `4`);
 - rolls its own lock back if slot creation fails, so a failure cannot wedge the pool.

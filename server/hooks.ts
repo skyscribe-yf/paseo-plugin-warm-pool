@@ -146,17 +146,14 @@ function writeMapping(anchor: string, mapping: SlotMapping): void {
 /**
  * Workspace display name for a pooled slot.
  *
- * Paseo derives the displayed name from the checked-out branch, which for a slot is `pool/<slot>`.
- * The workspace still belongs to its checkout (the project column already shows
- * `my-checkout`), so the name only needs a compact lane marker rather than a full path — the
- * checkout name is already the grouping above it.
+ * Left unset on purpose. Paseo lets an agent later call `rename_workspace` to attach an
+ * AI-generated description, and that call **replaces** `title` wholesale. A lane marker planted in
+ * `title` would therefore be wiped by the first turn. The slot identity instead rides on the
+ * derived display name (the branch, `pool/<slot>`), which reconciliation keeps re-deriving from
+ * git and never overwrites.
  *
- * `title` is a user-set overlay that reconciliation never overwrites, so it survives; the git
- * branch is left untouched.
+ * Leaving `title` null is what makes the generated description survive intact.
  */
-function workspaceTitle(slot: string): string {
-  return `[${slot}]`;
-}
 
 /**
  * Find the project whose root is exactly this checkout, so a slot workspace can be filed under the
@@ -235,8 +232,10 @@ export function registerWorktreeHooks(server: PluginServerContext): () => void {
     return {
       ...request,
       source: { kind: "directory", path: claimed.path, projectId },
-      // Compact lane marker; the project column already shows the checkout name.
-      title: request.title?.trim() || workspaceTitle(claimed.slot),
+      // Only honour a title the caller already set. Left unset otherwise so the slot shows its
+      // derived branch name (`pool/<slot>`) and an agent's later `rename_workspace` lands cleanly
+      // instead of overwriting a plugin-planted prefix.
+      ...(request.title?.trim() ? { title: request.title.trim() } : {}),
     };
   });
 
