@@ -83,9 +83,10 @@ my-checkout          ← the checkout
  └── pool/lane-c
 ```
 
-This works because the hook carries the checkout's `projectId` through to the creation request.
-Without it Paseo falls back to `basename(cwd)` — which for a slot is `lane-a` — and registers a
-separate project per slot.
+This works because the hook carries the checkout's `projectId` through to the creation request —
+both when it redirects a worktree request and when a caller adopts a pre-claimed slot directory
+(the implementer skill's lane flow). Without it Paseo falls back to `basename(cwd)` — which for a
+slot is `lane-a` — and registers a separate project per slot.
 
 The plugin deliberately sets **no** title. Paseo lets an agent call `rename_workspace` to attach a
 generated description, and that replaces `title` wholesale, so a lane marker planted there would be

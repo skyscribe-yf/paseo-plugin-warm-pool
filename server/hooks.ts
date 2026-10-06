@@ -189,6 +189,31 @@ function describeLabel(req: {
 }
 
 /**
+ * Re-file a request that already targets a pool slot under the slot's checkout.
+ *
+ * The implementer skill claims a slot with `pool-take.sh` and then adopts that
+ * existing directory as a workspace. That path never reaches the worktree branch
+ * below, and without a `projectId` Paseo derives the project from `basename(cwd)`
+ * — `lane-a` — registering one project per slot in the sidebar. Injecting the
+ * checkout's project keeps slots nested under `my-checkout` however the workspace
+ * is created.
+ */
+async function fileSlotDirectorySource(
+  paseo: {
+    projects: { list: () => Promise<{ projects: { projectId: string; projectRootPath: string }[] }> };
+  },
+  source: { kind: "directory"; path: string; projectId?: string },
+): Promise<{ kind: "directory"; path: string; projectId?: string } | undefined> {
+  if (source.projectId) return undefined;
+  const parsed = parseSlotPath(source.path);
+  if (!parsed || !slotNames().includes(parsed.slot)) return undefined;
+  const projectId = await projectIdForCheckout(paseo, parsed.repo);
+  if (!projectId) return undefined;
+  console.log(`[warm-pool] filed ${source.path} under project ${projectId}`);
+  return { ...source, projectId };
+}
+
+/**
  * Register the daemon-side worktree hooks.
  *
  * `workspace.create` fires before Paseo branches on `source.kind`, so returning
@@ -200,9 +225,16 @@ export function registerWorktreeHooks(server: PluginServerContext): () => void {
   if (process.env.WARM_POOL_ENABLED === "0") return () => {};
 
   const removeBefore = server.before("workspace.create", async ({ request }, ctx) => {
-    // Only explicit worktree requests need redirecting. Directory requests are
-    // already reuse-friendly, and leaving them alone keeps the blast radius
-    // small.
+    // A request that already points at a pool slot keeps its directory; only the
+    // project filing needs fixing. Covers callers that adopt a pre-claimed slot
+    // instead of asking for a worktree (the implementer skill's lane flow).
+    if (request.source.kind === "directory") {
+      const source = await fileSlotDirectorySource(ctx.paseo, request.source);
+      return source ? { ...request, source } : undefined;
+    }
+
+    // Only explicit worktree requests need redirecting to a slot. Directory
+    // requests already point at the directory they want.
     if (request.source.kind !== "worktree") return undefined;
 
     const cwd = request.source.cwd;
