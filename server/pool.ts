@@ -44,7 +44,16 @@ export async function resolveAnchor(cwd: string): Promise<{
     ? gitCommonDir.slice(0, -5)
     : gitCommonDir;
 
-  const anchor = join(gitCommonDir, "wt-pool");
+  // The anchor is a SIBLING of the repo (`<repo>.wt-pool`), not a directory inside
+  // `<repo>/.git`. Paseo's workspace-git-service observes git-common-dir as its
+  // file-observer root and linux.js caps that at MAX_WATCHED_DIRECTORIES = 5000; full
+  // checkout slots push one pool into the tens of thousands of directories and degrade
+  // git metadata to polling.
+  //
+  // Must stay identical to `anchorOf` in server/hooks.ts and `wt_anchor_dir` in
+  // ~/.agents/skills/implementer/wt-anchor.sh. If they disagree, hooks claim slots in one
+  // place while this panel lists another.
+  const anchor = `${repoRoot}.wt-pool`;
   return {
     gitCommonDir,
     repoRoot,

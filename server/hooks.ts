@@ -40,7 +40,19 @@ function slotNames(): string[] {
   return parsed.length > 0 ? parsed : [...DEFAULT_SLOTS];
 }
 
-/** Absolute pool anchor for a checkout, e.g. /repo/.git/wt-pool. */
+/**
+ * Absolute pool anchor for a checkout, e.g. `/repo.wt-pool`.
+ *
+ * Mirrors `wt_anchor_dir` in the implementer skill's `wt-anchor.sh` — the two must
+ * agree on where slots live or the plugin and the skill end up pointing at different
+ * pools. Keep the comments there in sync when changing either side.
+ *
+ * The anchor is a sibling of the repo rather than a directory inside `.git` because
+ * Paseo's workspace-git-service observes `git-common-dir` as its file-observer root
+ * and `linux.js` caps that at `MAX_WATCHED_DIRECTORIES = 5000`. Full checkout slots
+ * (with node_modules/.venv) push one pool into the tens of thousands of directories,
+ * blow the cap, and degrade git metadata to polling.
+ */
 async function anchorOf(cwd: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(
@@ -50,8 +62,11 @@ async function anchorOf(cwd: string): Promise<string | null> {
     );
     const common = stdout.trim();
     // A bare repo has no `.git` suffix and has no usable pool.
-    if (!common.endsWith(".git")) return null;
-    return join(common, "wt-pool");
+    if (!common.endsWith("/.git") && !common.endsWith("\\.git")) return null;
+    // Strip the `/` TOO. `slice(0, -".git".length)` leaves a trailing slash, which would
+    // yield `<repo>/.wt-pool` (inside the checkout) instead of the sibling `<repo>.wt-pool`.
+    const repoRoot = common.replace(/[/\\]\.git$/, "");
+    return `${repoRoot}.wt-pool`;
   } catch {
     return null;
   }
@@ -60,20 +75,26 @@ async function anchorOf(cwd: string): Promise<string | null> {
 /**
  * Anchor and main checkout for a slot path, tolerating an already-removed slot.
  *
- * A slot lives at `<repo>/.git/wt-pool/pool/<slot>`, so the anchor can be
- * recovered by string surgery even when the worktree is gone — which is the
- * normal state by the time `workspace.archived` fires.
+ * A slot lives at `<repo>.wt-pool/pool/<slot>`, so the anchor can be recovered by
+ * string surgery even when the worktree is gone — which is the normal state by the
+ * time `workspace.archived` fires. The repo path is the anchor with the `.wt-pool`
+ * suffix stripped, which is why the anchor has to stay a sibling directory rather
+ * than moving somewhere opaque like a hashed cache root.
  */
 function parseSlotPath(path: string): { anchor: string; repo: string; slot: string } | null {
   const parts = path.split("/").filter(Boolean);
   const poolIndex = parts.lastIndexOf("pool");
   if (poolIndex < 1 || poolIndex + 2 !== parts.length) return null;
-  if (parts[poolIndex - 1] !== "wt-pool") return null;
-  const common = parts.slice(0, poolIndex - 1).join("/");
-  const repo = common.endsWith("/.git") ? common.slice(0, -5) : common;
+  const anchorDir = parts[poolIndex - 1] ?? "";
+  if (!anchorDir.endsWith(".wt-pool")) return null;
+  const anchor = `/${parts.slice(0, poolIndex).join("/")}`;
   return {
-    anchor: `${parts.slice(0, poolIndex).join("/")}`,
-    repo: `/${repo}`,
+    anchor,
+    // Strip the suffix off the FULL anchor, not off `anchorDir`. `anchorDir` is only the
+    // last path segment, so deriving repo from it yields `/mind-shield-ws-1` instead of
+    // `/home/.../srcs/mind-shield-ws-1` — which never matches a projectRootPath, leaving
+    // the slot without a projectId and letting Paseo name a project after `basename(cwd)`.
+    repo: anchor.slice(0, -".wt-pool".length),
     slot: parts[poolIndex + 1]!,
   };
 }
