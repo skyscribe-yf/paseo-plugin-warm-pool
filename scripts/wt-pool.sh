@@ -182,11 +182,21 @@ self_test() {
     echo "PASS: reuse works (same path, ignored deps kept, untracked cleaned)"
     echo "PASS: created=$(basename "$wt1")  branch=$(git -C "$wt1" branch --show-current)"
 
-    # --- 锚点契约：池挂在 git-common-dir 下，不随 cwd 变化 ---
+    # --- 锚点契约：池挂在 <repo-root>.wt-pool 下，不随 cwd 变化，且不在 .git 里 ---
+    local repo_root_anchor abs_dir
+    abs_dir=$(cd "$(dirname "$abs")" && pwd)
+    # 自测仓库就是 $tmp 本身（上面 git init 在这里）
+    repo_root_anchor=$( cd "$tmp" && . "$abs_dir/wt-anchor.sh" && wt_repo_root )
     case "$wt1" in
-      "$(git rev-parse --path-format=absolute --git-common-dir)"/wt-pool/*)
-        echo "PASS: pool is anchored under git-common-dir" ;;
-      *) echo "FAIL: pool not under git-common-dir: $wt1"; exit 1 ;;
+      "$repo_root_anchor".wt-pool/*)
+        echo "PASS: pool is anchored at <repo-root>.wt-pool" ;;
+      *) echo "FAIL: pool not at <repo-root>.wt-pool: $wt1"; exit 1 ;;
+    esac
+    # 池绝不能落在 git-common-dir 里：Paseo 的 file-observer 以 git-common-dir 为观察根，
+    # linux.js 的 MAX_WATCHED_DIRECTORIES=5000 会被完整 checkout 的槽位顶穿。
+    case "$wt1" in
+      */.git/*) echo "FAIL: pool landed inside .git (breaks Paseo file observer): $wt1"; exit 1 ;;
+      *) echo "PASS: pool is outside .git (Paseo observer root unaffected)" ;;
     esac
 
     # 换一个文件夹（模拟平台的临时 worktree）进入，同一分支必须命中同一个槽位。

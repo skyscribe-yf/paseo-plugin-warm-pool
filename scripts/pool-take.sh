@@ -9,7 +9,7 @@
 # 窃取只按认领时长判断（记录 PID 仅作展示——编排器的每条 shell 都是短命进程，
 # 进程存活检查在 agent 环境下会立即误判为可窃取，等于没有锁）。
 # NOTE: 工作区本地工具（.gitignore scripts/* 挡住，不入库）；池槽位分支名按工作区命名空间隔离。
-# 锚点挂在 git-common-dir（见 wt-anchor.sh）：同一 repo 的任意入口共享同一个池与同一把锁，
+# 锚点由 git-common-dir 推导（见 wt-anchor.sh）：同一 repo 的任意入口共享同一个池与同一把锁，
 # 不同 repo 完全隔离。若锚点随 cwd 变化，锁就退化成「本次会话内有效」，形同虚设。
 set -euo pipefail
 
@@ -22,6 +22,21 @@ _wt_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 . "$_wt_dir/wt-anchor.sh"
 
 git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "not in a git repo" >&2; exit 1; }
+
+# 旧锚点仍有池却没迁移时，必须 fail closed。
+# 放行的代价不是「多一个空目录」：新位置没有依赖树，下一个槽位要全量重装
+# （实测 16 槽位约 14.6 GB），而旧池变成无人认领的孤儿。与其静默烧掉十几 GB，
+# 不如停下来让人显式跑一次 wt-migrate-anchor.sh。
+if wt_has_legacy_pool; then
+  legacy=$(wt_legacy_anchor_dir)
+  echo "pool-take: 检测到未迁移的旧池 $legacy/pool，拒绝在新锚点建空池。" >&2
+  echo "  原因: 新锚点无依赖树，直接认领会触发全量重装并留下孤儿池。" >&2
+  echo "  解决: 先迁移（依赖树随目录 mv，不重新安装）——" >&2
+  echo "        $_wt_dir/wt-migrate-anchor.sh [--dry-run]" >&2
+  echo "  临时: WT_ANCHOR_DISABLE=1 继续用旧锚点（仍会有 Paseo 观察器超限问题）。" >&2
+  exit 3
+fi
+
 wt_ensure_dirs
 POOL="$(wt_pool_dir)"
 
